@@ -1,20 +1,14 @@
-import { EventEmitter } from "events";
+import { spliceElement } from './utils';
 
 interface Connectable {
-  new(host: string, port: number);
-  open(): void;
   close(): void;
-}
-
-function createInstance<T>(c: {new(...params: Array<any>): T}, args: Array<any>): T {
-  return new c(...args);
 }
 
 interface ConnectionCB<T> {
   (err: Error, connection: T): void;
-}
+} 
 
-export class ConnectionsPool<T extends Connectable> extends EventEmitter {
+export class ConnectionsPool<T extends Connectable> {
 
   private _allConnections:      Array<T> = [];
   private _freeConnections:     Array<T> = [];
@@ -23,16 +17,14 @@ export class ConnectionsPool<T extends Connectable> extends EventEmitter {
   private _queuedCBs: Array<ConnectionCB<T>> = [];
   private _closed = false;
 
-  constructor(private connectionLimit: number, private getNewConnection: () => T) {
-    super();
-  }
+  constructor(private connectionLimit: number, private getNewConnection: () => T) { }
 
   close(): void {
     this._allConnections.forEach(conn => conn.close());
     this._closed = true;
   }
 
-  getConnection(cb: ConnectionCB<T>, waitForConnection: boolean = true): T {
+  getConnection(cb: ConnectionCB<T>, waitForConnection: boolean = true): void {
     if (this._closed) {
       process.nextTick(() => cb(new Error('Pool is closed'), undefined));
       return;
@@ -63,26 +55,37 @@ export class ConnectionsPool<T extends Connectable> extends EventEmitter {
   }
 
   acquireConnection(connection: T, cb: ConnectionCB<T>): void {
+    
     this._acquiredConnections.push(connection);
-
-    this.emit('acquire', connection);
+    
     cb(null, connection);
+
+    this.releaseConnection(connection);
   }
 
   releaseConnection(connection: T): void {
-    if (this._acquiredConnections.indexOf(connection) !== -1) {
-      return;
+
+    if (this._acquiredConnections.indexOf(connection) === -1) {
+      throw new Error('Connection was not acquired to release it')
     }
 
     if (this._freeConnections.indexOf(connection) !== -1) {
       throw new Error('Connection has already been released');
     } else {
       this._freeConnections.push(connection);
-      this.emit('release', connection);
     }
 
     if (this._queuedCBs.length) {
       this.getConnection(this._queuedCBs.shift());
     }
+  }
+
+  removeConnection(connection: T) {
+
+    spliceElement(this._allConnections, connection);
+
+    spliceElement(this._freeConnections, connection);
+
+    this.releaseConnection(connection);
   }
 }
