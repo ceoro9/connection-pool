@@ -1,10 +1,10 @@
 {
-  "name": "connection_pool",
+  "name": "connection-pool",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc --module es2015"
+    "build": "tsc --module commonjs --target ES5"
   },
   "author": "",
   "license": "ISC",
