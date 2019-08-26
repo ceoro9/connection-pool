@@ -35,16 +35,18 @@ const getConnection = async () => {
 const pool = new ConnectionsPool(2, getConnection);
 
 async function handle(name) {
-    console.log(`${name}'s started work`);
-    return new Promise(resolve => {
-        pool.getConnection(async (err, conn) => {
-            console.log(`${name}'s obtained connection. Error = ${err}`)
-            await sleep(3000);  // making some operations
-            conn.release();
-            resolve(conn);
-            console.log(`${name}'s finished its work`)
-        });
-    })
+  console.log(`${name}'s started work`);
+  try {
+    
+    const conenction = await pool.getConnection();
+  
+    await sleep(3000);  // making some operations
+    conenction.release();
+    
+    console.log(`${name}'s finished its work`)
+  } catch (e) {
+    console.log(`${name}'s obtained connection. Error = ${err}`)
+  }
 }
 
 console.log('starting ...');

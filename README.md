@@ -18,12 +18,17 @@ import ConnectionPool from 'connection-pool';
 const getNewConnection = () => new Promise(...);
 const pool = new ConnectionsPool(5, getNewConnection);
 
-pool.getNewConnection(conn => {
-  // some operations
-  conn.release();
-});
-
-pool.close()
+(async function () {
+  try {
+    const connection = await pool.getConnection();
+    // some operations
+    connection.release();
+  } catch (e) {
+    console.log(e);
+  } finally {
+    pool.close();
+  }
+})();
 ```
 
 ### TODO

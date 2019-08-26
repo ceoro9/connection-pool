@@ -2,15 +2,14 @@ import { spliceElement } from './utils';
 
 interface Connectable {
   close(): void;
-  ping?(): void;
-  // TODO: add ping method
 }
 
 // Wrapper around provided connection type
 type PoolConnection<T> = T & { release: () => void };
 
-interface ConnectionCB<T> {
-  (err: Error, connection: PoolConnection<T>): void;
+interface ConnectionPromise<T> {
+  resolve(connection: PoolConnection<T>): void;
+  reject (error: Error): void;
 }
 
 export class ConnectionsPool<T extends Connectable> {
@@ -19,17 +18,26 @@ export class ConnectionsPool<T extends Connectable> {
   private freeConnections:     Array<T> = [];
   private acquiredConnections: Array<T> = [];
   
-  private queuedCBs: Array<ConnectionCB<T>> = [];
+  private queuedPromises: Array<ConnectionPromise<T>> = [];
   private pendingConnectionsCount = 0;
   private closed = false;
 
-  constructor(private readonly connectionLimit: number,
-              private readonly getNewConnection: () => Promise<T>) {}
+  public constructor(private readonly connectionLimit: number,
+                     private readonly getNewConnection: () => Promise<T>) {}
 
-  getConnection(cb: ConnectionCB<T>, waitForConnection: boolean = true): void {
+  public async getConnection(waitForConnection: boolean = true): Promise<PoolConnection<T>> {
+    return new Promise((resolve, reject) => {
+      this.handleConnectionPromise({ resolve, reject }, waitForConnection);
+    });
+  }
+
+  private async handleConnectionPromise(cp: ConnectionPromise<T>, waitForConnection: boolean = true) {
+    // callbacks to resolve/reject promises, returned by getConnection method
+    const resolve = (connection: T) => cp.resolve(this.convertToPoolConnection(connection));
+    const reject  = cp.reject;
+    
     if (this.closed) {
-      process.nextTick(() => cb(new Error('Pool is closed'), undefined));
-      return;
+      return reject(new Error('Pool is closed'));
     }
 
     // open new connection
@@ -37,56 +45,57 @@ export class ConnectionsPool<T extends Connectable> {
       
       this.pendingConnectionsCount += 1;
       
-      this.getNewConnection().then((newConnection: T) => {
-        
+      try {
+        const newConnection = await this.getNewConnection();
+        this.allConnections.push(newConnection);
+        this.acquireConnection(newConnection);
+        return resolve(newConnection);
+      } catch (e) {
+        return reject(e);
+      } finally {
         this.pendingConnectionsCount -= 1;
-        
-        this.allConnections.push(newConnection);  
-        this.acquireConnection(newConnection, cb);
-
-      }).catch(err => {
-        
-        this.pendingConnectionsCount -= 1;
-
-        cb(err, undefined)
-      });
-      
-      return;
+      }
     }
 
     // check free connections
     if (this.freeConnections.length) {
       const connection = this.freeConnections.shift();
-      this.acquireConnection(connection, cb);
-      return;
+      this.acquireConnection(connection);
+      return resolve(connection);
     }
 
     // no available connections
     if (!waitForConnection) {
-      process.nextTick(() => cb(new Error('No available connections'), undefined));
-      return;
+      return reject(new Error('No available connections'));
     }
 
-    // put callback to queue to execute it after somebody releases connection
-    this.queuedCBs.push(cb);
+    // put promise connection to queue to handle it after somebody releases connection
+    this.queuedPromises.push(cp);
   }
 
-  private getPoolConnection(connection: T): PoolConnection<T> {
+  public removeConnection(connection: T) {
+    spliceElement(this.allConnections, connection);
+    spliceElement(this.freeConnections, connection);
+    this.releaseConnection(connection);
+  }
+
+  public close() {
+    this.allConnections.forEach(conn => conn.close());
+    this.closed = true;
+  }
+
+  private convertToPoolConnection(connection: T): PoolConnection<T> {
     return {
       ...connection,
       release: () => this.releaseConnection(connection),
     }
   }
 
-  acquireConnection(connection: T, cb: ConnectionCB<T>): void {
-    
+  private acquireConnection(connection: T) {
     this.acquiredConnections.push(connection);
-
-    cb(null, this.getPoolConnection(connection));
   }
 
-  releaseConnection(connection: T): void {
-
+  private releaseConnection(connection: T) {
     if (this.acquiredConnections.indexOf(connection) === -1) {
       throw new Error('Connection was not acquired to release it')
     }
@@ -97,22 +106,8 @@ export class ConnectionsPool<T extends Connectable> {
       this.freeConnections.push(connection);
     }
 
-    if (this.queuedCBs.length) {
-      this.getConnection(this.queuedCBs.shift());
+    if (this.queuedPromises.length) {
+      this.handleConnectionPromise(this.queuedPromises.shift());
     }
-  }
-
-  removeConnection(connection: T) {
-
-    spliceElement(this.allConnections, connection);
-
-    spliceElement(this.freeConnections, connection);
-
-    this.releaseConnection(connection);
-  }
-
-  close(): void {
-    this.allConnections.forEach(conn => conn.close());
-    this.closed = true;
   }
 }
