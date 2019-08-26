@@ -2,90 +2,117 @@ import { spliceElement } from './utils';
 
 interface Connectable {
   close(): void;
+  ping?(): void;
+  // TODO: add ping method
 }
 
+// Wrapper around provided connection type
+type PoolConnection<T> = T & { release: () => void };
+
 interface ConnectionCB<T> {
-  (err: Error, connection: T): void;
+  (err: Error, connection: PoolConnection<T>): void;
 }
 
 export class ConnectionsPool<T extends Connectable> {
 
-  private _allConnections:      Array<T> = [];
-  private _freeConnections:     Array<T> = [];
-  private _acquiredConnections: Array<T> = [];
+  private allConnections:      Array<T> = [];
+  private freeConnections:     Array<T> = [];
+  private acquiredConnections: Array<T> = [];
   
-  private _queuedCBs: Array<ConnectionCB<T>> = [];
-  private _closed = false;
+  private queuedCBs: Array<ConnectionCB<T>> = [];
+  private pendingConnectionsCount = 0;
+  private closed = false;
 
-  constructor(private readonly connectionLimit: number, private readonly getNewConnection: () => T) { }
-
-  close(): void {
-    this._allConnections.forEach(conn => conn.close());
-    this._closed = true;
-  }
+  constructor(private readonly connectionLimit: number,
+              private readonly getNewConnection: () => Promise<T>) {}
 
   getConnection(cb: ConnectionCB<T>, waitForConnection: boolean = true): void {
-    if (this._closed) {
+    if (this.closed) {
       process.nextTick(() => cb(new Error('Pool is closed'), undefined));
       return;
     }
 
     // open new connection
-    if (this.connectionLimit > this._allConnections.length) {
-      const newConnection: T = this.getNewConnection();
-      this._allConnections.push(newConnection);
-      this.acquireConnection(newConnection, cb);
+    if (this.connectionLimit > this.allConnections.length + this.pendingConnectionsCount) {
+      
+      this.pendingConnectionsCount += 1;
+      
+      this.getNewConnection().then((newConnection: T) => {
+        
+        this.pendingConnectionsCount -= 1;
+        
+        this.allConnections.push(newConnection);  
+        this.acquireConnection(newConnection, cb);
+
+      }).catch(err => {
+        
+        this.pendingConnectionsCount -= 1;
+
+        cb(err, undefined)
+      });
+      
       return;
     }
 
     // check free connections
-    if (this._freeConnections.length) {
-      const connection = this._freeConnections.shift();
+    if (this.freeConnections.length) {
+      const connection = this.freeConnections.shift();
       this.acquireConnection(connection, cb);
       return;
     }
 
-    // TODO: may be move to constructor
+    // no available connections
     if (!waitForConnection) {
       process.nextTick(() => cb(new Error('No available connections'), undefined));
       return;
     }
 
-    this._queuedCBs.push(cb);
+    // put callback to queue to execute it after somebody releases connection
+    this.queuedCBs.push(cb);
+  }
+
+  private getPoolConnection(connection: T): PoolConnection<T> {
+    return {
+      ...connection,
+      release: () => this.releaseConnection(connection),
+    }
   }
 
   acquireConnection(connection: T, cb: ConnectionCB<T>): void {
     
-    this._acquiredConnections.push(connection);
-    
-    cb(null, connection);
+    this.acquiredConnections.push(connection);
 
-    this.releaseConnection(connection);
+    cb(null, this.getPoolConnection(connection));
   }
 
   releaseConnection(connection: T): void {
 
-    if (this._acquiredConnections.indexOf(connection) === -1) {
+    if (this.acquiredConnections.indexOf(connection) === -1) {
       throw new Error('Connection was not acquired to release it')
     }
 
-    if (this._freeConnections.indexOf(connection) !== -1) {
+    if (this.freeConnections.indexOf(connection) !== -1) {
       throw new Error('Connection has already been released');
     } else {
-      this._freeConnections.push(connection);
+      this.freeConnections.push(connection);
     }
 
-    if (this._queuedCBs.length) {
-      this.getConnection(this._queuedCBs.shift());
+    if (this.queuedCBs.length) {
+      this.getConnection(this.queuedCBs.shift());
     }
   }
 
   removeConnection(connection: T) {
 
-    spliceElement(this._allConnections, connection);
+    spliceElement(this.allConnections, connection);
 
-    spliceElement(this._freeConnections, connection);
+    spliceElement(this.freeConnections, connection);
 
     this.releaseConnection(connection);
+  }
+
+  close(): void {
+    this.allConnections.forEach(conn => conn.close());
+    this.closed = true;
   }
 }
