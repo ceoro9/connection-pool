@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc --module es2015"
   },
   "author": "",
   "license": "ISC",

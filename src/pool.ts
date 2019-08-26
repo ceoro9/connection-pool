@@ -6,7 +6,7 @@ interface Connectable {
 
 interface ConnectionCB<T> {
   (err: Error, connection: T): void;
-} 
+}
 
 export class ConnectionsPool<T extends Connectable> {
 
@@ -17,7 +17,7 @@ export class ConnectionsPool<T extends Connectable> {
   private _queuedCBs: Array<ConnectionCB<T>> = [];
   private _closed = false;
 
-  constructor(private connectionLimit: number, private getNewConnection: () => T) { }
+  constructor(private readonly connectionLimit: number, private readonly getNewConnection: () => T) { }
 
   close(): void {
     this._allConnections.forEach(conn => conn.close());
@@ -31,7 +31,7 @@ export class ConnectionsPool<T extends Connectable> {
     }
 
     // open new connection
-    if (this.connectionLimit < this._allConnections.length) {
+    if (this.connectionLimit > this._allConnections.length) {
       const newConnection: T = this.getNewConnection();
       this._allConnections.push(newConnection);
       this.acquireConnection(newConnection, cb);
