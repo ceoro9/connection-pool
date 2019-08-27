@@ -4,6 +4,10 @@ interface Connectable {
   close(): void;
 }
 
+// Does not allow release property on provided connection type,
+// because it's going to be re-defined by PoolConnection.
+type ProvidedConnection<T>= "release" extends keyof T ? never : T;
+
 // Wrapper around provided connection type
 type PoolConnection<T> = T & { release: () => void };
 
@@ -23,7 +27,7 @@ export class ConnectionsPool<T extends Connectable> {
   private closed = false;
 
   public constructor(private readonly connectionLimit: number,
-                     private readonly getNewConnection: () => Promise<T>) {}
+                     private readonly getNewConnection: () => Promise<ProvidedConnection<T>>) {}
 
   public async getConnection(waitForConnection: boolean = true): Promise<PoolConnection<T>> {
     return new Promise((resolve, reject) => {
