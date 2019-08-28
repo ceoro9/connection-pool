@@ -1,4 +1,4 @@
-import { spliceElement } from './utils';
+import { spliceElement, isShiftable } from './utils';
 
 interface Connectable {
   close(): void;
@@ -66,8 +66,8 @@ export class ConnectionsPool<T extends Connectable> {
     }
 
     // check free connections
-    if (this.freeConnections.length) {
-      const connection = this.freeConnections.shift()!;
+    if (isShiftable(this.freeConnections)) {
+      const connection = this.freeConnections.shift();
       this.acquireConnection(connection);
       resolve(connection);
       return;
@@ -123,8 +123,8 @@ export class ConnectionsPool<T extends Connectable> {
       this.freeConnections.push(connection);
     }
 
-    if (this.queuedPromises.length) {
-      this.handleConnectionPromise(this.queuedPromises.shift()!);
+    if (isShiftable(this.queuedPromises)) {
+      this.handleConnectionPromise(this.queuedPromises.shift());
     }
   }
 }
