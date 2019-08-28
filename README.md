@@ -33,8 +33,7 @@ const pool = new ConnectionsPool(5, getNewConnection);
 
 ### TODO
 1. Add unit tests
-2. Add more timeout options: `acquireTimeout`, `waitForConnections`, `connectionLimit` and `queueLimit` params.
-3. Make `ConnectionPool` to emit events after connection was established, acquired and etc.
+2. Make `ConnectionPool` to emit events after connection was established, acquired and etc.
 
 ### License
 This project is licensed under the [MIT](https://choosealicense.com/licenses/mit/) License.

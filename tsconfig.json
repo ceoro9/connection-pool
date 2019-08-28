@@ -1,10 +1,24 @@
 {
   "compilerOptions": {
-    "noImplicitAny": true,
-    "module": "es6",
+    // Common
+    "module": "commonjs",
     "target": "es5",
     "allowJs": true,
-    "outDir": "build"
+    "outDir": "build",
+    "sourceMap": true, 
+
+    // Type-checking options
+    "strict": true,
+    "noImplicitAny": true,
+    "alwaysStrict": true,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
+
+    // Additional checks
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true
   },
   "include": [
     "src/**/*"

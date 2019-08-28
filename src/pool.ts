@@ -27,7 +27,8 @@ export class ConnectionsPool<T extends Connectable> {
   private closed = false;
 
   public constructor(private readonly connectionLimit: number,
-                     private readonly getNewConnection: () => Promise<ProvidedConnection<T>>) {}
+                     private readonly getNewConnection: () => Promise<ProvidedConnection<T>>,
+                     private readonly queueLimit: number | null = null) {}
 
   public async getConnection(waitForConnection: boolean = true): Promise<PoolConnection<T>> {
     return new Promise((resolve, reject) => {
@@ -66,7 +67,7 @@ export class ConnectionsPool<T extends Connectable> {
 
     // check free connections
     if (this.freeConnections.length) {
-      const connection = this.freeConnections.shift();
+      const connection = this.freeConnections.shift()!;
       this.acquireConnection(connection);
       resolve(connection);
       return;
@@ -75,6 +76,12 @@ export class ConnectionsPool<T extends Connectable> {
     // no available connections
     if (!waitForConnection) {
       reject(new Error('No available connections'));
+      return;
+    }
+
+    // too many connection promises in queue
+    if (this.queueLimit && this.queuedPromises.length >= this.queueLimit) {
+      reject(new Error('Queue limit is exceeded'));
       return;
     }
 
@@ -117,7 +124,7 @@ export class ConnectionsPool<T extends Connectable> {
     }
 
     if (this.queuedPromises.length) {
-      this.handleConnectionPromise(this.queuedPromises.shift());
+      this.handleConnectionPromise(this.queuedPromises.shift()!);
     }
   }
 }
