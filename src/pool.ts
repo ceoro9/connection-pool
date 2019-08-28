@@ -41,7 +41,8 @@ export class ConnectionsPool<T extends Connectable> {
     const reject  = cp.reject;
     
     if (this.closed) {
-      return reject(new Error('Pool is closed'));
+      reject(new Error('Pool is closed'));
+      return;
     }
 
     // open new connection
@@ -53,24 +54,28 @@ export class ConnectionsPool<T extends Connectable> {
         const newConnection = await this.getNewConnection();
         this.allConnections.push(newConnection);
         this.acquireConnection(newConnection);
-        return resolve(newConnection);
+        resolve(newConnection);
       } catch (e) {
-        return reject(e);
+        reject(e);
       } finally {
         this.pendingConnectionsCount -= 1;
       }
+
+      return;
     }
 
     // check free connections
     if (this.freeConnections.length) {
       const connection = this.freeConnections.shift();
       this.acquireConnection(connection);
-      return resolve(connection);
+      resolve(connection);
+      return;
     }
 
     // no available connections
     if (!waitForConnection) {
-      return reject(new Error('No available connections'));
+      reject(new Error('No available connections'));
+      return;
     }
 
     // put promise connection to queue to handle it after somebody releases connection
@@ -100,6 +105,7 @@ export class ConnectionsPool<T extends Connectable> {
   }
 
   private releaseConnection(connection: T) {
+    
     if (this.acquiredConnections.indexOf(connection) === -1) {
       throw new Error('Connection was not acquired to release it')
     }
